@@ -29,6 +29,11 @@ You can now create multiple checkboxes without any separator:
 ```markdown
 [ ] Task 1 [x] Task 2 [ ] Task 3
 ```
+Or just:
+
+```markdown
+[ ] [x] [ ] 
+```
 
 This will render as three individual checkboxes on the same line with minimal spacing.
 
