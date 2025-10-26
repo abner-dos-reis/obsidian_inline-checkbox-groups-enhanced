@@ -1,0 +1,18 @@
+# GitHub CLI binary and extracted files
+gh_*_linux_amd64.tar.gz
+gh_*/
+
+# Temporary files
+*.tmp
+*.temp
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
