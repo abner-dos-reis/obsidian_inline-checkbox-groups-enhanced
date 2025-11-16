@@ -134,7 +134,12 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
           
           // Reconstruct line preserving original spacing and structure
           let newLine = items.join(" ");
-          
+          // Preserve any leading text that was present before the first checkbox
+          const leadingText = paragraph.getAttribute("data-leading-text") || "";
+          if (leadingText && !newLine.trim().startsWith(leadingText)) {
+            newLine = `${leadingText} ${newLine}`.trim();
+          }
+
           editor.setLine(lineNumber, newLine);
           const file = view.file;
           if (file) {
@@ -177,6 +182,12 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
     const parts = text.split(checkboxRegex);
     const items = [];
     
+    // Capture any leading text that comes before the first checkbox (e.g. "Curso ")
+    let leadingText = "";
+    if (parts.length > 0 && !(parts[0] || "").match(checkboxRegex) && (parts[0] || "").trim() !== "") {
+      leadingText = parts[0].trim();
+    }
+
     // Reconstruct items by combining checkbox pattern with following text
     for (let i = 0; i < parts.length; i++) {
       if (parts[i] && parts[i].match(checkboxRegex)) {
@@ -202,8 +213,10 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
       items.push(...fallbackItems);
     }
     
-    element.empty();
-    element.setAttribute("data-original-text", text.trim());
+  element.empty();
+  element.setAttribute("data-original-text", text.trim());
+  // Save the detected leading text so we can preserve it when updating the editor
+  element.setAttribute("data-leading-text", leadingText);
     const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
     if (view) {
       const editor = view.editor;
@@ -222,6 +235,14 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
     if (allChecked && this.settings.crossOutWhenAllChecked) {
       element.classList.add("checkbox-crossed-out");
     }
+    // If there was leading text, render it before the checkbox group
+    if (leadingText) {
+      element.createSpan({
+        cls: "checkbox-group-leading",
+        text: leadingText
+      });
+    }
+
     items.forEach((item, index) => {
       if (item.match(/\[ ?\]|\[x\]/i)) {
         const container = element.createDiv({
