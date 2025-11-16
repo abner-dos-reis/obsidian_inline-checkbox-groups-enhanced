@@ -34,6 +34,9 @@ Or just:
 ```markdown
 [ ] [x] [ ] 
 ```
+```markdown
+NameHere [ ] [x] [ ] 
+```
 
 This will render as three individual checkboxes on the same line with minimal spacing.
 
