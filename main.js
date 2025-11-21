@@ -221,8 +221,13 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
     if (view) {
       const editor = view.editor;
       const lines = editor.getValue().split("\n");
+      const expectedCheckboxCount = (text.match(/\[[\sx]?\]/g) || []).length || (items.length || 0);
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i].trim() === text.trim()) {
+        const line = lines[i];
+        const lineCheckboxCount = (line.match(/\[[\sx]?\]/g) || []).length;
+        // Match based on checkbox count and presence of leading text (if any).
+        const hasLeading = leadingText ? line.includes(leadingText) : true;
+        if (hasLeading && lineCheckboxCount === expectedCheckboxCount && line.match(/\[[\sx]?\]/)) {
           const existingElements = document.querySelectorAll(`p[data-line-number="${i}"]`);
           if (existingElements.length === 0 || Array.from(existingElements).some((el) => el === element)) {
             element.setAttribute("data-line-number", i.toString());
