@@ -37,8 +37,8 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
   async onload() {
     await this.loadSettings();
     this.registerMarkdownPostProcessor((element, context) => {
-      // Search common block-level elements (paragraphs, list items, blockquotes, divs)
-      const candidates = element.querySelectorAll("p, li, blockquote, div");
+      // Search common block-level elements (paragraphs, list items, blockquotes, divs, callouts, etc.)
+      const candidates = element.querySelectorAll("p, li, blockquote, div, .callout-content");
       candidates.forEach((el) => {
         const text = el.textContent;
         if (text == null ? void 0 : text.match(/\[ ?\]|\[x\]/i)) {
@@ -89,7 +89,7 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
       return;
     let paragraph = container.closest("[data-line-number]");
     if (!paragraph)
-      paragraph = container.closest("p");
+      paragraph = container.closest("p, li");
     if (!paragraph)
       return;
     const lineNumber = parseInt(paragraph.getAttribute("data-line-number") || "-1");
@@ -98,32 +98,35 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
       const editor = view.editor;
       const line = editor.getLine(lineNumber);
       
-      // Parse checkboxes using regex instead of separator
-      const checkboxRegex = /(\[[\sx]?\])/gi;
+      // Parse checkboxes using regex - find all checkbox patterns
+      const checkboxRegex = /\[[\sx]?\]/gi;
+      const checkboxMatches = line.match(checkboxRegex) || [];
+      
+      // Split line by checkboxes and reconstruct items
       const parts = line.split(checkboxRegex);
       const items = [];
       
       // Reconstruct items by combining checkbox pattern with following text
-      for (let i = 0; i < parts.length; i++) {
-        if (parts[i] && parts[i].match(checkboxRegex)) {
-          const checkboxPart = parts[i];
-          const textPart = parts[i + 1] || "";
-          const nextCheckboxIndex = textPart.search(/\[[\sx]?\]/);
-          let content = nextCheckboxIndex >= 0 ? textPart.substring(0, nextCheckboxIndex) : textPart;
-          content = content.trim();
-          items.push(`${checkboxPart} ${content}`.trim());
-          if (nextCheckboxIndex >= 0) {
-            parts[i + 1] = textPart.substring(nextCheckboxIndex);
-          } else {
-            i++;
-          }
+      for (let i = 0; i < checkboxMatches.length; i++) {
+        const checkboxPart = checkboxMatches[i];
+        const textPart = parts[i + 1] || "";
+        
+        // Extract text until next checkbox or end
+        const nextCheckboxIndex = textPart.search(/\[[\sx]?\]/);
+        let content = nextCheckboxIndex >= 0 ? textPart.substring(0, nextCheckboxIndex) : textPart;
+        content = content.trim();
+        
+        items.push(`${checkboxPart}${content ? ' ' + content : ''}`);
+        
+        // Update parts array to remove consumed text
+        if (nextCheckboxIndex >= 0) {
+          parts[i + 1] = textPart.substring(nextCheckboxIndex);
         }
       }
       
       // Fallback to original separator logic if needed
-      if (items.length <= 1) {
-        const fallbackItems = line.includes(this.settings.separator) ? line.split(this.settings.separator).map((item) => item.trim()) : [line.trim()];
-        items.length = 0;
+      if (items.length === 0 && line.includes(this.settings.separator)) {
+        const fallbackItems = line.split(this.settings.separator).map((item) => item.trim());
         items.push(...fallbackItems);
       }
       
@@ -133,22 +136,20 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
           const prefix = ((_a = currentItem.match(/^[\s-]*/)) == null ? void 0 : _a[0]) || "";
           const content = currentItem.replace(/^(?:-\s*)?\[[\sx]?\]/, "").trim();
           const newCheckboxState = checkbox.checked ? "[x]" : "[ ]";
-          items[checkboxIndex] = `${prefix}${newCheckboxState} ${content}`;
+          items[checkboxIndex] = `${newCheckboxState}${content ? ' ' + content : ''}`;
           
           // Reconstruct line preserving original spacing and structure
-          let newLine = items.join(" ");
-          // Preserve any leading text that was present before the first checkbox
-          // but avoid duplicating it when the reconstructed content already contains it
+          // Find the leading text before the first checkbox
           const leadingText = paragraph.getAttribute("data-leading-text") || "";
-          if (leadingText) {
-            const nl = newLine.trim();
-            // Find any prefix before the first checkbox in the reconstructed line
-            const firstBracket = nl.indexOf("[");
-            const prefixInNewLine = firstBracket > 0 ? nl.substring(0, firstBracket).trim() : "";
-            if (!prefixInNewLine || prefixInNewLine !== leadingText) {
-              // Only prefix if the leadingText is not already present before the first checkbox
-              newLine = `${leadingText} ${newLine}`.trim();
-            }
+          const firstCheckboxPos = line.indexOf('[');
+          const actualLeadingText = firstCheckboxPos > 0 ? line.substring(0, firstCheckboxPos).trim() : leadingText;
+          
+          // Join items with a single space
+          let newLine = items.join(' ');
+          
+          // Add leading text if it exists
+          if (actualLeadingText) {
+            newLine = `${actualLeadingText} ${newLine}`;
           }
 
           editor.setLine(lineNumber, newLine);
@@ -187,41 +188,64 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
     }
   }
   renderCheckboxGroup(element, context) {
-    const text = element.textContent || "";
-    // Split by checkboxes pattern to find individual checkbox items
-    const checkboxRegex = /(\[[\sx]?\])/gi;
-    const parts = text.split(checkboxRegex);
-    const items = [];
-    
-    // Capture any leading text that comes before the first checkbox (e.g. "Curso ")
-    let leadingText = "";
-    if (parts.length > 0 && !(parts[0] || "").match(checkboxRegex) && (parts[0] || "").trim() !== "") {
-      leadingText = parts[0].trim();
-    }
-
-    // Reconstruct items by combining checkbox pattern with following text
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i] && parts[i].match(checkboxRegex)) {
-        const checkboxPart = parts[i];
-        const textPart = parts[i + 1] || "";
-        // Extract text until next checkbox or end
-        const nextCheckboxIndex = textPart.search(/\[[\sx]?\]/);
-        let content = nextCheckboxIndex >= 0 ? textPart.substring(0, nextCheckboxIndex) : textPart;
-        content = content.trim();
-        items.push(`${checkboxPart} ${content}`.trim());
-        if (nextCheckboxIndex >= 0) {
-          parts[i + 1] = textPart.substring(nextCheckboxIndex);
-        } else {
-          i++; // Skip the next part as we've consumed it
+    // Get only the direct text content, not from child elements
+    let text = "";
+    for (let node of element.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.nodeValue || "";
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        // Only include text from inline elements, not block elements like nested lists
+        const tagName = node.tagName?.toLowerCase();
+        if (tagName && !['ul', 'ol', 'li', 'div', 'blockquote'].includes(tagName)) {
+          text += node.textContent || "";
         }
       }
     }
     
+    // Split by checkboxes pattern to find individual checkbox items
+    const checkboxRegex = /\[[\sx]?\]/gi;
+    
+    // Find all checkbox matches
+    const checkboxMatches = text.match(checkboxRegex) || [];
+    const items = [];
+    
+    // Capture any leading text that comes before the first checkbox (e.g. "Curso ", "- ", "> ")
+    let leadingText = "";
+    const firstCheckboxIndex = text.search(checkboxRegex);
+    if (firstCheckboxIndex > 0) {
+      leadingText = text.substring(0, firstCheckboxIndex).trim();
+    }
+    
+    // Split text by checkbox patterns
+    const parts = text.split(checkboxRegex);
+    
+    // Reconstruct items by combining checkbox pattern with following text
+    for (let i = 0; i < checkboxMatches.length; i++) {
+      const checkboxPart = checkboxMatches[i];
+      const textPart = parts[i + 1] || "";
+      
+      // Extract text until next checkbox or end
+      const nextCheckboxIndex = textPart.search(/\[[\sx]?\]/);
+      let content = nextCheckboxIndex >= 0 ? textPart.substring(0, nextCheckboxIndex) : textPart;
+      content = content.trim();
+      
+      items.push(`${checkboxPart}${content ? ' ' + content : ''}`);
+      
+      // Update parts array to remove consumed text
+      if (nextCheckboxIndex >= 0) {
+        parts[i + 1] = textPart.substring(nextCheckboxIndex);
+      }
+    }
+    
     // Fallback to original logic if no multiple checkboxes found
-    if (items.length <= 1) {
-      const fallbackItems = text.includes(this.settings.separator) ? text.split(this.settings.separator).map((item) => item.trim()) : [text.trim()];
-      items.length = 0;
+    if (items.length === 0 && text.includes(this.settings.separator)) {
+      const fallbackItems = text.split(this.settings.separator).map((item) => item.trim());
       items.push(...fallbackItems);
+    }
+    
+    // If still no items, try to parse as single checkbox
+    if (items.length === 0 && checkboxMatches.length > 0) {
+      items.push(text.trim());
     }
     
     // Instead of emptying the element (which breaks surrounding list/callout structure),
@@ -287,44 +311,67 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
         return;
       if (node.nodeType === Node.TEXT_NODE) {
         const txt = node.nodeValue || "";
-        if (checkboxRegex.test(txt)) {
-          // Reset regex state
-          checkboxRegex.lastIndex = 0;
-          const parts = txt.split(checkboxRegex);
+        const tempRegex = /\[[\sx]?\]/gi;
+        if (tempRegex.test(txt)) {
+          // Reset regex and split by checkbox patterns
+          const checkboxPattern = /\[[\sx]?\]/gi;
+          const matches = txt.match(checkboxPattern) || [];
+          const parts = txt.split(checkboxPattern);
           const frag = document.createDocumentFragment();
-          for (let p of parts) {
-            if (!p)
-              continue;
-            if (p.match(checkboxRegex)) {
-              const item = items[itemIndex] || p;
-              const container = document.createElement("span");
-              container.className = "checkbox-group-container";
-              container.setAttribute("data-checkbox-index", String(itemIndex));
-              const checkbox = document.createElement("input");
-              checkbox.type = "checkbox";
-              checkbox.className = "task-list-item-checkbox";
-              checkbox.checked = /\[x\]/i.test(item);
-              this.registerDomEvent(checkbox, "change", () => this.handleCheckboxChange(checkbox));
+          
+          // Add leading text before first checkbox
+          if (parts[0]) {
+            frag.appendChild(document.createTextNode(parts[0]));
+          }
+          
+          // Process each checkbox
+          for (let i = 0; i < matches.length; i++) {
+            const item = items[itemIndex] || matches[i];
+            const container = document.createElement("span");
+            container.className = "checkbox-group-container";
+            container.setAttribute("data-checkbox-index", String(itemIndex));
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.className = "task-list-item-checkbox";
+            checkbox.checked = /\[x\]/i.test(matches[i]);
+            this.registerDomEvent(checkbox, "change", () => this.handleCheckboxChange(checkbox));
+            
+            // Only add span if the item has text content beyond the checkbox
+            const itemText = item.replace(/\[[\sx]?\]/i, "").trim();
+            if (itemText) {
               const span = document.createElement("span");
-              span.textContent = item.replace(/\[ ?\]|\[x\]/, "").trim();
+              span.textContent = itemText;
               if (allChecked && this.settings.crossOutWhenAllChecked) {
                 container.classList.add("checkbox-crossed-out");
               }
               container.appendChild(checkbox);
               container.appendChild(span);
-              frag.appendChild(container);
-              itemIndex++;
             } else {
-              frag.appendChild(document.createTextNode(p));
+              if (allChecked && this.settings.crossOutWhenAllChecked) {
+                container.classList.add("checkbox-crossed-out");
+              }
+              container.appendChild(checkbox);
             }
+            
+            frag.appendChild(container);
+            itemIndex++;
           }
+          
+          // Add any remaining text after last checkbox (only from same text node)
+          const lastPartIndex = matches.length;
+          if (parts[lastPartIndex]) {
+            frag.appendChild(document.createTextNode(parts[lastPartIndex]));
+          }
+          
           if (node.parentNode) {
             node.parentNode.replaceChild(frag, node);
           }
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
-        // Don't process nodes we've injected
+        // Don't process nodes we've injected or list markers
         if (node.classList && node.classList.contains("checkbox-group-container"))
+          return;
+        if (node.classList && node.classList.contains("list-bullet"))
           return;
         const children = Array.from(node.childNodes);
         for (let c of children)
@@ -342,47 +389,18 @@ var InlineCheckboxGroupPlugin = class extends import_obsidian.Plugin {
     } catch (e) {
     }
 
-    // If we injected nothing, try a permissive search for text nodes containing '[' and re-run replacement there.
-    if (itemIndex === 0) {
+    // If we didn't inject all checkboxes, try more aggressive tree walking
+    if (itemIndex < items.length) {
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
       let n2;
       while (n2 = walker.nextNode()) {
-        if ((n2.nodeValue || '').indexOf('[') >= 0) {
+        if ((n2.nodeValue || '').match(/\[[\sx]?\]/)) {
           processNode(n2);
         }
       }
       try {
         console.debug && console.debug("Inline-Checkbox-Groups: after permissive pass injected items", itemIndex);
       } catch (e) {
-      }
-    }
-
-    // If no checkboxes were injected (some DOM shapes may prevent text-node replacement),
-    // fall back to the previous safe rendering that recreates inline checkbox controls.
-    if (itemIndex === 0) {
-      try {
-        element.empty();
-        if (leadingText) {
-          element.createSpan({ cls: "checkbox-group-leading", text: leadingText });
-        }
-        const allCheckedFallback = items.every((item) => item.match(/\[x\]/i));
-        items.forEach((item, index) => {
-          if (item.match(/\[ ?\]|\[x\]/i)) {
-            const container = element.createDiv({ cls: "checkbox-group-container" });
-            container.setAttribute("data-checkbox-index", index.toString());
-            const checkbox = container.createEl("input", { type: "checkbox", cls: "task-list-item-checkbox" });
-            checkbox.checked = item.includes("[x]");
-            this.registerDomEvent(checkbox, "change", () => this.handleCheckboxChange(checkbox));
-            const span = container.createSpan({ text: item.replace(/\[ ?\]|\[x\]/, "").trim() });
-            if (allCheckedFallback && this.settings.crossOutWhenAllChecked) {
-              container.classList.add("checkbox-crossed-out");
-            }
-          }
-        });
-      } catch (e) {
-        // If element.empty/createSpan is not available, silently ignore — better to fail silently
-        // than to break the preview. The console will show errors for debugging.
-        console.warn("Inline-Checkbox-Groups: fallback rendering failed:", e);
       }
     }
   }
